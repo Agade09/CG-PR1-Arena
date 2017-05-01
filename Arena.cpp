@@ -18,7 +18,7 @@
 using namespace std;
 using namespace std::chrono;
 
-constexpr bool Debug_AI{true},Timeout{false};
+constexpr bool Debug_AI{false},Timeout{false};
 constexpr int PIPE_READ{0},PIPE_WRITE{1};
 constexpr int N{2};//Number of players, 1v1
 constexpr double FirstTurnTime{1*(Timeout?1:10)},TimeLimit{0.05*(Timeout?1:10)};
@@ -297,7 +297,7 @@ int Play_Game(const array<string,N> &Bot_Names,state &S){
                 stringstream ss;
                 ss << S.P[i].plat << endl;
                 for(int z=0;z<S.C.size();++z){
-                    ss << z << " " << S.C[z].owner << " " << S.C[z].pods[0] << " " << S.C[z].pods[1] << " " << S.C[z].pods[2] << " " << S.C[z].pods[3] << endl;
+                    ss << z << " " << S.C[z].owner << " " << S.C[z].pods[0] << " " << S.C[z].pods[1] << " " << (N>2?S.C[z].pods[2]:0) << " " << (N>3?S.C[z].pods[3]:0) << endl;
                 }
                 try{
                     Bot[i].Feed_Inputs(ss.str());
