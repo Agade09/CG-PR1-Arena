@@ -266,7 +266,7 @@ void Simulate(state &S,const array<strat,2> &M){
         }
     }
     for(int i=0;i<N;++i){//Income
-        S.P[i].plat+=accumulate(S.C.begin(),S.C.end(),0,[&](const int income,const cell &c){return income+c.plat;});
+        S.P[i].plat+=accumulate(S.C.begin(),S.C.end(),0,[&](const int income,const cell &c){return income+(c.owner==i?c.plat:0);});
     }
 }
 
