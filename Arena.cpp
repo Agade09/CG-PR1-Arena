@@ -261,7 +261,7 @@ void Simulate(state &S,const array<strat,2> &M){
                 c.owner=distance(c.pods.begin(),find_if(c.pods.begin(),c.pods.end(),[&](const int a){return a>0;}));
             }
         }
-        else if(presence==1 && c.owner==-1){
+        else if(presence==1){
             c.owner=distance(c.pods.begin(),find_if(c.pods.begin(),c.pods.end(),[&](const int a){return a>0;}));
         }
     }
