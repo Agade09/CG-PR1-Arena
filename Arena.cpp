@@ -18,7 +18,7 @@
 using namespace std;
 using namespace std::chrono;
 
-constexpr bool Debug_AI{false},Timeout{false};
+constexpr bool Debug_AI{true},Timeout{false};
 constexpr int PIPE_READ{0},PIPE_WRITE{1};
 constexpr int N{2};//Number of players, 1v1
 constexpr double FirstTurnTime{1*(Timeout?1:10)},TimeLimit{0.05*(Timeout?1:10)};
@@ -360,6 +360,7 @@ int Play_Round(array<string,N> Bot_Names){
     }
     for(cell &c:S.C){
         c.pods.resize(N);
+        fill(c.pods.begin(),c.pods.end(),0);
         c.owner=-1;
     }
     uniform_int_distribution<int> TotalPlatDistrib(110,120),PlatDistrib(1,6);
