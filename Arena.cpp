@@ -221,10 +221,14 @@ strat StringToStrat(const state &S,const string &M_Str){
     return M;
 }
 
+inline bool ValidCellIndex(const int idx)noexcept{
+    return idx>=0 && idx<MapSize;
+}
+
 void Simulate(state &S,const array<strat,2> &M){
     for(int i=0;i<N;++i){//Moving
         for(const play_move &mv:M[i].MV){
-            if(find_if(S.C[mv.from].L.begin(),S.C[mv.from].L.end(),[&](const int l){return l==mv.to;})!=S.C[mv.from].L.end()){//The link exists
+            if(ValidCellIndex(mv.from) && ValidCellIndex(mv.to) && find_if(S.C[mv.from].L.begin(),S.C[mv.from].L.end(),[&](const int l){return l==mv.to;})!=S.C[mv.from].L.end()){//The link exists
                 int presence=count_if(S.C[mv.from].pods.begin(),S.C[mv.from].pods.end(),[&](const int a){return a>0;});
                 if(presence<2 || S.C[mv.to].owner==i || S.C[mv.to].owner==-1){//Can only flee battle to own/neutral territory
                     int to_send{min(mv.amount,S.C[mv.from].pods[i])};
@@ -236,7 +240,7 @@ void Simulate(state &S,const array<strat,2> &M){
     }
     for(int i=0;i<N;++i){//Buying
         for(const play_buy &mv:M[i].B){
-            if(S.C[mv.from].owner==i || S.C[mv.from].owner==-1){
+            if(ValidCellIndex(mv.from) && (S.C[mv.from].owner==i || S.C[mv.from].owner==-1) ){
                 int to_buy{min(mv.amount,S.P[i].plat/20)};
                 S.C[mv.from].pods[i]+=to_buy;
                 S.P[i].plat-=to_buy*20;
