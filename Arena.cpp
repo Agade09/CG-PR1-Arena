@@ -417,7 +417,7 @@ double Play_Round(array<string,N> Bot_Names){
         return -1;
     }
     const int final_rank=distance(Ranking.begin(),find(Ranking.begin(),Ranking.end(),player_swap?1:0));
-    return (N-final_rank-1)/(N-1);
+    return static_cast<double>(N-final_rank-1)/(N-1);
 }
 
 void StopArena(const int signum){
