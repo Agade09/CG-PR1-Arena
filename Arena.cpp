@@ -20,7 +20,7 @@ using namespace std::chrono;
 
 constexpr bool Debug_AI{false},Timeout{false};
 constexpr int PIPE_READ{0},PIPE_WRITE{1};
-constexpr int N{2};//Number of players, 1v1
+constexpr int N{2};//Number of players
 constexpr double FirstTurnTime{1*(Timeout?1:10)},TimeLimit{0.05*(Timeout?1:10)};
 constexpr int MapSize{154},LinkCount{301};
 constexpr char MapLinks[]{"2 3 34 35 50 51 98 99 114 115 130 131 146 147 50 54 2 7 50 55 114 120 98 105 34 42 98 106 66 76 66 77 82 93 82 94 18 44 18 51 3 4 19 20 35 36 83 84 99 100 115 116 131 132 3 7 51 55 3 8 51 56 115 120 147 152 115 121 99 106 19 27 99 107 67 78 83 95 4 5 20 21 52 53 68 69 84 85 100 101 116 117 132 133 4 8 4 9 116 121 116 122 20 27 52 59 100 107 20 28 100 108 68 79 84 95 84 96 5 6 21 22 69 70 85 86 101 102 117 118 149 150 5 9 5 10 117 122 37 43 53 59 117 123 21 28 101 108 21 29 101 109 69 79 69 80 85 96 22 23 54 55 86 87 102 103 118 119 6 10 134 138 6 11 118 123 54 60 118 124 22 29 54 61 102 109 102 110 70 80 70 81 39 40 7 8 55 56 71 72 87 88 135 136 135 139 39 44 119 124 135 140 7 13 55 61 119 125 7 14 55 62 103 110 103 111 71 83 24 25 8 9 40 41 72 73 120 121 152 153 40 44 136 140 40 45 8 14 24 30 56 62 8 15 56 63 120 128 104 113 120 129 72 83 72 84 9 10 25 26 41 42 73 74 105 106 121 122 41 45 137 141 25 30 137 142 9 15 25 31 9 16 89 97 121 129 105 114 121 130 57 67 73 84 73 85 10 11 74 75 90 91 106 107 122 123 138 139 26 31 10 16 26 32 138 144 10 17 90 98 106 114 122 130 90 99 106 115 122 131 58 68 74 85 74 86 11 12 27 28 75 76 91 92 107 108 123 124 139 140 43 46 11 17 139 145 91 99 107 115 123 131 91 100 107 116 123 132 27 37 59 69 59 70 75 86 75 87 44 45 28 29 60 61 76 77 92 93 108 109 124 125 140 145 140 146 92 100 108 116 124 132 92 101 108 117 124 133 28 38 60 71 76 87 76 88 13 14 61 62 93 94 109 110 125 126 141 142 13 19 13 20 141 148 93 101 109 117 125 133 29 38 93 102 109 118 61 71 61 72 77 88 14 15 30 31 46 47 62 63 110 111 126 127 46 48 46 49 14 20 142 148 14 21 94 102 110 118 30 39 94 103 110 119 62 72 62 73 78 89 15 16 31 32 63 64 79 80 95 96 111 112 47 49 15 21 15 22 127 134 143 150 31 39 111 119 31 40 63 73 63 74 79 90 79 91 16 17 0 1 32 33 48 49 64 65 80 81 128 129 16 22 16 23 144 151 32 40 32 41 128 137 64 74 64 75 80 91 80 92 1 2 33 34 65 66 81 82 129 130 145 146 1 3 17 23 97 104 33 41 129 137 33 42 65 75 65 76 81 92 81 93"};
@@ -69,9 +69,9 @@ inline string EmptyPipe(const int fd){
 }
 
 struct AI{
-    int id,pid,outPipe,errPipe,inPipe;
+    int id,pid,outPipe,errPipe,inPipe,turnOfDeath;
     string name;
-    inline void stop(){
+    inline void stop(const int turn=-1){
         if(alive()){
             kill(pid,SIGTERM);
             int status;
@@ -79,6 +79,7 @@ struct AI{
             if(!WIFEXITED(status)){//If not exited normally try to "kill -9" the process
                 kill(pid,SIGKILL);
             }
+            turnOfDeath=turn;
         }
     }
     inline bool alive()const{
@@ -225,7 +226,7 @@ inline bool ValidCellIndex(const int idx)noexcept{
     return idx>=0 && idx<MapSize;
 }
 
-void Simulate(state &S,const array<strat,2> &M){
+void Simulate(state &S,const array<strat,N> &M){
     for(int i=0;i<N;++i){//Moving
         for(const play_move &mv:M[i].MV){
             if(mv.amount>0 && ValidCellIndex(mv.from) && ValidCellIndex(mv.to) && find_if(S.C[mv.from].L.begin(),S.C[mv.from].L.end(),[&](const int l){return l==mv.to;})!=S.C[mv.from].L.end()){//The link exists
@@ -270,7 +271,41 @@ void Simulate(state &S,const array<strat,2> &M){
     }
 }
 
-int Play_Game(const array<string,N> &Bot_Names,state &S){
+vector<int> GameOutcome(const state &S,const array<AI,N> &Bot){
+    array<int,N> Zones;
+    for(int i=0;i<N;++i){
+        Zones[i]=count_if(S.C.begin(),S.C.end(),[&](const cell &c){return c.owner==i;});
+    }
+    const int winner=distance(Zones.begin(),max_element(Zones.begin(),Zones.end()));
+    const bool tie{count(Zones.begin(),Zones.end(),Zones[winner])>1};
+    if(tie){
+        return {-1};
+    }
+    else{
+        vector<int> Ranking(S.P.size());
+        iota(Ranking.begin(),Ranking.end(),0);
+        sort(Ranking.begin(),Ranking.end(),[&](const int a,const int b){
+            if(Bot[a].alive()!=Bot[b].alive()){
+                return Bot[a].alive();
+            }
+            else if(Bot[a].alive()){
+                return Zones[a]>Zones[b];
+            }
+            else if(!Bot[a].alive()){
+                return Bot[a].turnOfDeath>Bot[b].turnOfDeath;
+            }
+            });
+        return Ranking;
+    }
+}
+
+inline bool PlayerAlive(const state &S,const int id){
+    const bool can_buy{(S.P[id].plat>=20 || accumulate(S.C.begin(),S.C.end(),0,[&](const int income,const cell &c){return income+(c.owner==id?c.plat:0);})>0) && count_if(S.C.begin(),S.C.end(),[&](const cell &c){return c.owner==id || c.owner==-1;})>0};
+    const bool has_pods{find_if(S.C.begin(),S.C.end(),[&](const cell &c){return c.pods[id]>0;})!=S.C.end()};
+    return can_buy || has_pods;
+}
+
+vector<int> Play_Game(const array<string,N> &Bot_Names,state &S){
     array<AI,N> Bot;
     for(int i=0;i<N;++i){
         Bot[i].id=i;
@@ -291,7 +326,7 @@ int Play_Game(const array<string,N> &Bot_Names,state &S){
     }
     int turn{0};
     while(++turn>0 && !stop){
-        array<strat,2> M;
+        array<strat,N> M;
         for(int i=0;i<N;++i){
             if(Bot[i].alive()){
                 stringstream ss;
@@ -310,38 +345,38 @@ int Play_Game(const array<string,N> &Bot_Names,state &S){
                     else if(ex==5){
                         cerr << "AI " << Bot[i].name << " died before being able to give it inputs" << endl;
                     }
-                    Bot[i].stop();
+                    Bot[i].stop(turn);
                 }
             }
         }
-        for(int i=0;i<2;++i){
+        Simulate(S,M);
+        for(int i=0;i<N;++i){
             string err_str{EmptyPipe(Bot[i].errPipe)};
             if(Debug_AI){
                 ofstream err_out("log.txt",ios::app);
                 err_out << err_str << endl;
             }
+            if(!PlayerAlive(S,i)){
+                Bot[i].stop(turn);
+            }
+        }
+        for(int i=0;i<N;++i){
             if(Has_Won(Bot,i)){
                 //cerr << i << " has won in " << turn << " turns" << endl;
-                return i;
+                return GameOutcome(S,Bot);
             }
         }
         if(All_Dead(Bot)){
-            return -1;
+            return {-1};
         }
-        Simulate(S,M);
         if(turn==200){
-            array<int,N> Zones;
-            for(int i=0;i<N;++i){
-                Zones[i]=count_if(S.C.begin(),S.C.end(),[&](const cell &c){return c.owner==i;});
-            }
-            //cerr << "Zones: " << Zones[0] << " " << Zones[1] << endl;
-            return Zones[0]>Zones[1]?0:Zones[1]>Zones[0]?1:-1;
+            return GameOutcome(S,Bot);
         }
     }
-    return -2;
+    return {-2};
 }
 
-int Play_Round(array<string,N> Bot_Names){
+double Play_Round(array<string,N> Bot_Names){
     default_random_engine generator(system_clock::now().time_since_epoch().count());
     uniform_int_distribution<int> Swap_Distrib(0,1);
     const bool player_swap{Swap_Distrib(generator)==1};
@@ -377,13 +412,12 @@ int Play_Round(array<string,N> Bot_Names){
     for(player& p:S.P){
         p.plat=200;
     }
-    int winner{Play_Game(Bot_Names,S)};
-    if(player_swap){
-        return winner==-1?-1:winner==0?1:0;
+    vector<int> Ranking=Play_Game(Bot_Names,S);
+    if(Ranking[0]==-1){
+        return -1;
     }
-    else{
-        return winner;
-    }
+    const int final_rank=distance(Ranking.begin(),find(Ranking.begin(),Ranking.end(),player_swap?1:0));
+    return (N-final_rank-1)/(N-1);
 }
 
 void StopArena(const int signum){
@@ -404,6 +438,9 @@ int main(int argc,char **argv){
     for(int i=0;i<2;++i){
         Bot_Names[i]=argv[i+1];
     }
+    for(int i=2;i<N;++i){
+        Bot_Names[i]=Bot_Names[1];
+    }
     cout << "Testing AI " << Bot_Names[0];
     for(int i=1;i<N;++i){
         cerr << " vs " << Bot_Names[i];
@@ -423,8 +460,8 @@ int main(int argc,char **argv){
     array<double,2> points{0,0};
     #pragma omp parallel num_threads(N_Threads) shared(games,points,Bot_Names)
     while(!stop){
-        int winner{Play_Round(Bot_Names)};
-        if(winner==-1){//Draw
+        double pts{Play_Round(Bot_Names)};
+        if(pts==-1){//Draw
             #pragma omp atomic
             ++draws;
             #pragma omp atomic
@@ -433,7 +470,8 @@ int main(int argc,char **argv){
             points[1]+=0.5;
         }
         else{//Win
-            ++points[winner];
+            points[0]+=pts;
+            points[1]+=1-pts;
         }
         #pragma omp atomic
         ++games;
@@ -441,6 +479,10 @@ int main(int argc,char **argv){
         double sigma{sqrt(p*(1-p)/games)};
         double better{0.5+0.5*erf((p-0.5)/(sqrt(2)*sigma))};
         #pragma omp critical
-        cout << "Wins:" << setprecision(4) << 100*p << "+-" << 100*sigma << "% Rounds:" << games << " Draws:" << draws << " " << better*100 << "% chance that " << Bot_Names[0] << " is better" << endl;
+        cout << "Wins:" << setprecision(4) << 100*p << "+-" << 100*sigma << "% Rounds:" << games;
+        if(N==2){
+            cout << " Draws:" << draws << " " << better*100 << "% chance that " << Bot_Names[0] << " is better";
+        }
+        cout << endl;
     }
 }
